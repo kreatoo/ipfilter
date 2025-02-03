@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+    "bufio"
 	"strings"
 
 	"github.com/caddyserver/caddy"
@@ -338,6 +339,51 @@ func parseIP(ip string) ([]*net.IPNet, error) {
 	return nil, parseError
 }
 
+// fetchWhitelist retrieves the whitelist txt file from the provided URL,
+// parses it line by line to extract IP addresses (ignoring comments), and returns them as a slice.
+func fetchWhitelist(url string) ([]string, error) {
+    // Send a GET request to the URL
+    resp, err := http.Get(url)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch URL: %w", err)
+    }
+    defer resp.Body.Close()
+
+    // Check the HTTP status code
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("HTTP request failed: %s", resp.Status)
+    }
+
+    var ips []string
+    scanner := bufio.NewScanner(resp.Body)
+    for scanner.Scan() {
+        // Trim whitespace from the beginning and end of the line
+        line := strings.TrimSpace(scanner.Text())
+
+        // Skip empty lines or lines that are full comments
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+
+        // Remove inline comments if any (e.g., "192.168.1.1 # home IP")
+        if idx := strings.Index(line, "#"); idx != -1 {
+            line = strings.TrimSpace(line[:idx])
+        }
+
+        // If the line is not empty, add it to the IP list
+        if line != "" {
+            ips = append(ips, line)
+        }
+    }
+
+    // Check for errors during scanning
+    if err := scanner.Err(); err != nil {
+        return nil, fmt.Errorf("error reading file: %w", err)
+    }
+
+    return ips, nil
+}
+
 // ipfilterParseSingle parses a single ipfilter {} block from the caddy config.
 func ipfilterParseSingle(config *IPFConfig, c *caddy.Controller) (IPPath, error) {
 	var cPath IPPath
@@ -371,6 +417,32 @@ func ipfilterParseSingle(config *IPFConfig, c *caddy.Controller) (IPPath, error)
 				return cPath, c.Err("ipfilter: Rule should be 'block' or 'allow'")
 			}
 			ruleTypeSpecified = true
+        case "urls":
+            if !c.NextArg() {
+                return cPath, c.ArgErr()
+            }
+            // Fetch URL contents
+            urls := c.Val()
+            // Fetch URL contents
+            if urls == "" {
+                return cPath, c.Err("ipfilter: No URL provided")
+            }
+
+            // Fetch the whitelist from the URL
+            ips, err := fetchWhitelist(urls)
+            if err != nil {
+                return cPath, c.Err("ipfilter: Failed to fetch whitelist: " + err.Error())
+            }
+
+            // Parse the IP addresses
+            for _, ip := range ips {
+                ipRange, err := parseIP(ip)
+                if err != nil {
+                    return cPath, c.Err("ipfilter: " + err.Error())
+                }
+
+                cPath.Nets = append(cPath.Nets, ipRange...)
+            }
 		case "database":
 			if !c.NextArg() {
 				return cPath, c.ArgErr()
