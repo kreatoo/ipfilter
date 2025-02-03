@@ -1,4 +1,4 @@
-module github.com/pyed/ipfilter
+module github.com/kreatoo/ipfilter
 
 go 1.12
 

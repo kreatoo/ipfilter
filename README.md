@@ -12,6 +12,7 @@ IP addresses (or CIDR ranges) or country of origin using a
 ipfilter <basepath> {
     rule       <block | allow>
     ip         <addresses or CIDR ranges to block>
+    urls       <URLs to get IP addresses from in txt form>
     prefix_dir <IP addr directory prefix>
     database   </path/to/GeoLite2-Country.mmdb>
     country    <ISO two letter country codes>
